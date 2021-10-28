@@ -1,0 +1,161 @@
+---
+title: "hw4_Adam_Banwell"
+author: "Adam Banwell"
+date: "10/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Commands
+
+## Part one: Cleaning data
+```{r}
+library(dplyr)
+library(ggplot2)
+
+library(readxl)
+defense <- read_excel('cyclonesFootball2020.xlsx', sheet='Defensive')
+defense
+str(defense)
+
+offense <- read_excel('cyclonesFootball2020.xlsx', sheet='Offensive')
+offense
+str(offense)
+
+biography <- read_excel('cyclonesFootball2020.xlsx', sheet='Biography')
+biography
+str(biography)
+
+```
+#1. player names and opponent names should be factors.
+```{r}
+defense$Name = factor(defense$Name)
+defense$Opponent_Opponent = factor(defense$Opponent_Opponent)
+
+offense$Name = factor(offense$Name)
+offense$Opponent_Opponent = factor(offense$Opponent_Opponent)
+
+biography$Name = factor(biography$Name)
+```
+
+#2. All offensive and defensive statistics should be numerical. The Weight column in biogrpahy should also be numeric.
+```{r}
+defClean = defense %>% select(-Name, -Opponent_Opponent) %>% mutate_if(is.character,as.numeric)
+defClean = defense %>% select(Name, Opponent_Opponent) %>% mutate(defClean)
+defClean
+
+#Replace Pass cmp-att with two seperate columns
+offClean = offense %>% mutate(Passing_CMP = substring(offense$"Passing_CMP-ATT", 1,2))
+offClean = offClean %>% mutate(Passing_ATT = substring(offense$"Passing_CMP-ATT", 57))
+
+offclean = offClean %>% select(-"Passing_CMP-ATT")
+
+offClean2 = offclean %>% select(-Name, -Opponent_Opponent) %>% mutate_if(is.character,as.numeric)
+offClean = offClean %>% select(Name, Opponent_Opponent) %>% mutate(offClean2)
+offClean
+
+bioClean = biography
+bioClean$Weight = as.numeric(bioClean$Weight)
+bioClean
+
+```
+
+#3. The Height column in biography should be numeric.
+```{r}
+feet = substring(bioClean$Height, 1, 1)
+inches = substring(bioClean$Height, 3)
+
+inches = as.numeric(inches)
+
+feet2inches = as.numeric(feet) * 12
+
+total = feet2inches+inches
+
+bioClean$Height = total
+
+```
+
+#4. Add a column to both defense and offense indicating whether it is the first or the second game versus an opponent.
+```{r}
+defClean = defClean %>% group_by(Name)  %>% 
+  mutate(game = case_when(
+    duplicated(Opponent_Opponent)==TRUE ~ 2,
+    duplicated(Opponent_Opponent)==FALSE ~ 1
+    ))
+
+offClean = offClean %>% group_by(Name)  %>% 
+  mutate(game = case_when(
+    duplicated(Opponent_Opponent)==TRUE ~ 2,
+    duplicated(Opponent_Opponent)==FALSE ~ 1
+    ))
+
+str(defClean)
+str(offClean)
+str(bioClean)
+
+```
+
+##Part two: Tidying and exploring
+#1. Reformat the offClean data frame into a tidy format using pivot_longer.
+```{r}
+library(tidyverse)
+offClean = offClean %>%
+  pivot_longer(!Name & !Opponent_Opponent, names_to = "stat", values_to = "values")
+offClean
+
+```
+
+#2. Obtain the player-level offensive statistics. Namely, for each player and each type of statistics, obtain the sum of the statistics in all games.
+```{r}
+stats=offClean %>% drop_na()
+stats=stats %>% group_by(Name, stat)
+stats=stats %>% summarise(sum=sum(values))
+stats=stats[!(stats$stat=="game"),]
+stats
+```
+
+#3. Show the distributions of the player-level offensive statistics. The distribution of each offensive statsitic should be shown in a separate facet. Explain the patterns you see.
+```{r}
+stats=stats[!(stats$sum==0),]
+stats
+ggplot(stats, aes(x=Name, y=sum, fill = Name))+geom_bar(stat='identity')+facet_wrap(~stat, scales = "free")
+```
+
+#Did ISU have better offense against Oregon or Oklahoma? 
+```{r}
+oregon=offClean[(offClean$Opponent_Opponent=='Oregon'),]
+oregon=oregon[(oregon$stat=='Receiving_YDS'),]
+oklahoma=offClean[(offClean$Opponent_Opponent=='Oklahoma'),]
+oklahoma=oklahoma[(oklahoma$stat=='Receiving_YDS'),]
+
+oklahoma = rename(oklahoma, values2 = values)
+vs = oregon %>% full_join(oklahoma,by="Name")
+ggplot(data = vs, aes(x = values, y = values2)) + geom_point()
+
+```
+ISU had a better offense vs Oklahoma due to more yards in those games.
+
+#4. Separate the Hometown column into two columns, namely, the city and the state where the player comes from. Print the first few rows of these two columns.
+```{r}
+bioClean
+bioClean = bioClean %>% separate(Hometown, c('City', 'State'), sep=",")
+bioClean
+bioClean = bioClean %>% select(City, State)
+print(bioClean, n=3)
+```
+
+#5. How many players are there from each state?
+```{r}
+bioClean
+bioClean %>% group_by(State) %>% count()
+```
+
+#6. How does the performance of quarterback Brock Purdy relate to the performance of the ISU team? Comment on both the defense and offense.
+```{r}
+offClean %>% group_by(Name) %>% filter(Name=="Purdy, Brock") %>% filter(stat=='Passing_CMP') %>%  summarise(Avg_Pass_CMP = mean(values, na.rm = TRUE))
+```
+
+Offense will directly do better when Purdy's completion status is high and offense does lower when he is low
